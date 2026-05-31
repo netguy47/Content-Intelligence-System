@@ -30,7 +30,7 @@ async function startServer() {
   // API: Audit and Re-Engineer Content Idea using 90th Percentile Engineering SOP
   app.post("/api/audit", async (req, res) => {
     try {
-      const { topic, platform, niche, targetAudience, extraContext } = req.body;
+      const { topic, platform, niche, targetAudience, extraContext, selectedAngle } = req.body;
       if (!topic || !platform) {
         return res.status(400).json({ error: "Missing topic or target platform." });
       }
@@ -52,7 +52,13 @@ async function startServer() {
 
       // Generate precise mathematical scores. Keep tone expert.
 
-      const promptText = `Perform a full 90th Percentile SOP audit and content re-engineering on: Topic: "${topic}" | Platform: "${platform}" | Niche: "${niche || 'General'}" | Audience: "${targetAudience || 'General'}" | Context: "${extraContext || 'None'}". Enforce BSS >= 0.90, KSM >= 0.95, and Probability >= 0.85 as the elite standard. The re-engineered hook must include all 3 triggers: Rewatch (seamless loop/save checklist), Conversation (polarizing reply question), and Share prompts.
+      let promptText = `Perform a full 90th Percentile SOP audit and content re-engineering on: Topic: "${topic}" | Platform: "${platform}" | Niche: "${niche || 'General'}" | Audience: "${targetAudience || 'General'}" | Context: "${extraContext || 'None'}".`;
+
+      if (selectedAngle) {
+        promptText += `\nCRITICAL ADVANCED DIRECTION: The user has selected a high-attention strategic angle to anchor their campaign around: "${selectedAngle}". You MUST architect and draft the re-engineered hook, script visual/auditory cues, and native copy specifically to support and showcase this specific "${selectedAngle}" angle of opportunity. Do not wander from this framing.`;
+      }
+
+      promptText += `\nEnforce BSS >= 0.90, KSM >= 0.95, and Probability >= 0.85 as the elite standard. The re-engineered hook must include all 3 triggers: Rewatch (seamless loop/save checklist), Conversation (polarizing reply question), and Share prompts.
 Calculate BSS elements: Conversation Potential, Retention/Dwell Time, Media Strength, Early Velocity, Decay Mitigation. Ensure calculatedBss is >= 0.90 for elite greenlights.
 Calculate KSM elements: Platform Match, First-3s/First-line keyword placement, and Relevance. Ensure calculatedKsm is >= 0.95 for elite greenlights.
 Calculate Final success probability = calculatedBss * calculatedKsm. Target is >= 0.85 for Elite Standard.
@@ -209,6 +215,83 @@ Provide a JSON object containing:
     } catch (error: any) {
       console.error("Keywords research error:", error);
       res.status(500).json({ error: error.message || "Keyword query error." });
+    }
+  });
+
+  // API: Discover Attention Triggers and Rank Angles
+  app.post("/api/discover-attention", async (req, res) => {
+    try {
+      const { topic, platform, niche, targetAudience, extraContext } = req.body;
+      if (!topic) {
+        return res.status(400).json({ error: "Missing topic input." });
+      }
+
+      const client = getAIClient();
+
+      const systemInstruction = `You are an elite 2026 Attention Intelligence Broker. Your purpose is to find the highest-attention angles, psychological triggers, and opportunity values hidden within a topic. You rank opportunities using an Attention Score (Curiosity, Conflict, Consequences, Dialogue Potential) multiplied by an Optimization Score. Deliver a detailed trigger analysis and ranked angle list matching the Vanguard Angle Library.`;
+
+      const promptText = `Analyze the target topic: "${topic}" for platform: "${platform || 'All social feeds'}". 
+Niche: "${niche || 'General'}" | Persona: "${targetAudience || 'General'}" | Directives: "${extraContext || 'None'}"
+
+Perform the following:
+1. Identify 5 foundational Attention Triggers (e.g. Curiosity, Conflict, Consequences, Fear of Loss, Betrayal, Hidden Incentives, Contradiction, Mystery, Status, Warning) and score them (0.0 to 1.0) with concise explanation of why they apply.
+2. Discover and formulate exactly 5 highly specific content angles from the Angel Library (including: Historical Parallel, Strategic Consequences, Economic Fallout, Who Benefits?, Wrong Question, Human Impact, Prediction, Hidden Incentives, Contrarian Position, Myth vs Reality).
+3. For each discovered angle, calculate:
+   - "attentionScore": scale 0.0 to 1.0 (evaluating initial curiosity and debate potential)
+   - "optimizationScore": scale 0.0 to 1.0 (evaluating viral loop trigger loading readiness)
+   - "opportunityScore": calculated as (attentionScore * optimizationScore), rounded list score.
+   - "hookPreview": A highly tuned, scroll-stopping first-line teaser option.
+4. Rank the discovered angles from highest opportunity score down to the lowest. Output exclusively as a clean JSON conforming to the requested schema structure.`;
+
+      const response = await client.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: promptText,
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              attentionTriggers: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    trigger: { type: Type.STRING },
+                    score: { type: Type.NUMBER },
+                    explanation: { type: Type.STRING }
+                  },
+                  required: ["trigger", "score", "explanation"]
+                }
+              },
+              discoveredAngles: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING, description: "Compact angle title. e.g. Who Benefits?" },
+                    indexType: { type: Type.STRING, description: "Choose one from the library: Historical Parallel, Strategic Consequences, Economic Fallout, Who Benefits?, Wrong Question, Human Impact, Prediction, Hidden Incentives, Contrarian Position, Myth vs Reality" },
+                    description: { type: Type.STRING, description: "Clear strategic thesis of this angle" },
+                    attentionScore: { type: Type.NUMBER },
+                    optimizationScore: { type: Type.NUMBER },
+                    opportunityScore: { type: Type.NUMBER, description: "Multiply attentionScore * optimizationScore" },
+                    primaryTrigger: { type: Type.STRING, description: "e.g. Curiosity, Threat, Privilege, etc." },
+                    hookPreview: { type: Type.STRING, description: "Scroll-stopping first 1.5 seconds preview hook" }
+                  },
+                  required: ["title", "indexType", "description", "attentionScore", "optimizationScore", "opportunityScore", "primaryTrigger", "hookPreview"]
+                }
+              }
+            },
+            required: ["attentionTriggers", "discoveredAngles"]
+          }
+        }
+      });
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json(parsed);
+    } catch (error: any) {
+      console.error("Discover attention error:", error);
+      res.status(500).json({ error: error.message || "Failed to analyze attention triggers." });
     }
   });
 

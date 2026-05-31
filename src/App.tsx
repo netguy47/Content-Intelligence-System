@@ -300,8 +300,25 @@ export default function App() {
   const [loadStep, setLoadStep] = useState(0);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
-  const [currentTab, setCurrentTab] = useState<"dashboard" | "keywords" | "library">("dashboard");
+  const [currentTab, setCurrentTab] = useState<"attention" | "dashboard" | "keywords" | "library">("attention");
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Attention Intelligence states
+  const [attentionLoading, setAttentionLoading] = useState(false);
+  const [attentionError, setAttentionError] = useState("");
+  const [attentionTriggers, setAttentionTriggers] = useState<any[] | null>(null);
+  const [discoveredAngles, setDiscoveredAngles] = useState<any[] | null>(null);
+  const [selectedAngle, setSelectedAngle] = useState("");
+  const [loadStepAttention, setLoadStepAttention] = useState(0);
+
+  const attentionLoadingSteps = [
+    "Querying physical and emotional triggers database...",
+    "Extracting curiosity multipliers...",
+    "Scanning primary friction and conflict zones...",
+    "Constructing distinct Angle Library models...",
+    "Calculating native attention index metrics...",
+    "Ranking optimal opportunities..."
+  ];
 
   // Keyword tool state
   const [keywordTopic, setKeywordTopic] = useState("");
@@ -393,7 +410,61 @@ export default function App() {
     return () => clearInterval(interval);
   }, [loading]);
 
-  const runAudit = async (e?: React.FormEvent) => {
+  // Attention loading stepper timer
+  useEffect(() => {
+    let interval: any;
+    if (attentionLoading) {
+      interval = setInterval(() => {
+        setLoadStepAttention((prev) => (prev < attentionLoadingSteps.length - 1 ? prev + 1 : prev));
+      }, 2500);
+    } else {
+      setLoadStepAttention(0);
+    }
+    return () => clearInterval(interval);
+  }, [attentionLoading]);
+
+  const discoverAttention = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!topic.trim()) {
+      setAttentionError("Please input a raw content topic or select one of our pre-seeded templates.");
+      return;
+    }
+
+    setAttentionLoading(true);
+    setAttentionError("");
+    setAttentionTriggers(null);
+    setDiscoveredAngles(null);
+    setSelectedAngle("");
+
+    try {
+      const response = await fetch("/api/discover-attention", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          platform,
+          niche,
+          targetAudience,
+          extraContext
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Attention analysis was interrupted.");
+      }
+
+      const data = await response.json();
+      setAttentionTriggers(data.attentionTriggers);
+      setDiscoveredAngles(data.discoveredAngles);
+    } catch (err: any) {
+      setAttentionError(err.message || "Failed to analyze attention hooks. Please retry.");
+    } finally {
+      setAttentionLoading(false);
+    }
+  };
+
+  const runAudit = async (e?: React.FormEvent, angleToForce?: string) => {
     if (e) e.preventDefault();
     if (!topic.trim()) {
       setErrorMessage("Please input a raw content topic or select one of our pre-seeded templates.");
@@ -405,6 +476,8 @@ export default function App() {
     setAuditResult(null);
     setChecklist({});
 
+    const angle = angleToForce || selectedAngle;
+
     try {
       const response = await fetch("/api/audit", {
         method: "POST",
@@ -414,7 +487,8 @@ export default function App() {
           platform,
           niche,
           targetAudience,
-          extraContext
+          extraContext,
+          selectedAngle: angle
         }),
       });
 
@@ -666,6 +740,17 @@ export default function App() {
           {/* Quick Tab switcher */}
           <nav className="flex items-center gap-1 bg-[#111] p-1 rounded-lg border border-[#222]">
             <button
+              onClick={() => setCurrentTab("attention")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-mono uppercase tracking-wider transition-all ${
+                currentTab === "attention"
+                  ? "bg-[#00ff4110] text-[#00ff41] border border-[#00ff4144]"
+                  : "text-[#888] hover:text-white border border-transparent"
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              Attention Broker
+            </button>
+            <button
               onClick={() => setCurrentTab("dashboard")}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-mono uppercase tracking-wider transition-all ${
                 currentTab === "dashboard"
@@ -674,7 +759,7 @@ export default function App() {
               }`}
             >
               <Gauge className="w-3.5 h-3.5" />
-              Intelligence
+              SOP Optimizer
             </button>
             <button
               onClick={() => {
@@ -780,7 +865,17 @@ export default function App() {
                 </button>
               </div>
 
-              <form onSubmit={runAudit} className="flex flex-col gap-5">
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (currentTab === "attention") {
+                    discoverAttention();
+                  } else {
+                    runAudit();
+                  }
+                }} 
+                className="flex flex-col gap-5"
+              >
                 {/* Topic / Idea Textarea */}
                 <div>
                   <label className="block text-[10px] uppercase tracking-widest text-[#666] font-bold mb-1.5">
@@ -889,21 +984,36 @@ export default function App() {
                 {/* Trigger Engine Buttons */}
                 <div className="pt-2">
                   <button
-                    disabled={loading}
+                    disabled={loading || attentionLoading}
                     type="submit"
                     className="w-full bg-[#0a0a0a] hover:bg-[#111] text-[#00ff41] border border-[#00ff41] shadow-[0_0_8px_#00ff411a] hover:shadow-[0_0_12px_#00ff412c] font-bold font-mono tracking-widest text-xs py-3 px-6 rounded relative overflow-hidden flex items-center justify-center gap-2 group transition-all cursor-pointer disabled:bg-[#111] disabled:text-[#444] disabled:border-[#222] disabled:shadow-none"
                   >
-                    {loading ? (
-                      <div className="flex items-center gap-3">
-                        <span className="w-3.5 h-3.5 border-2 border-[#00ff41]/20 border-t-[#00ff41] rounded-full animate-spin" />
-                        <span className="animate-pulse">ENGAGING NEURAL AUDIT...</span>
-                      </div>
+                    {currentTab === "attention" ? (
+                      attentionLoading ? (
+                        <div className="flex items-center gap-3">
+                          <span className="w-3.5 h-3.5 border-2 border-[#00ff41]/20 border-t-[#00ff41] rounded-full animate-spin" />
+                          <span className="animate-pulse">BROKERING DISCOVERY...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 text-[#00ff41] group-hover:scale-110 transition-transform" />
+                          <span>1. DISCOVER ATTENTION & ANGLES</span>
+                          <ArrowRight className="w-4 h-4 text-[#00ff41]" />
+                        </>
+                      )
                     ) : (
-                      <>
-                        <Sparkles className="w-4 h-4 text-[#00ff41] group-hover:scale-110 transition-transform" />
-                        <span>DEPLOY EXPERT ANALYSIS</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
+                      loading ? (
+                        <div className="flex items-center gap-3">
+                          <span className="w-3.5 h-3.5 border-2 border-[#00ff41]/20 border-t-[#00ff41] rounded-full animate-spin" />
+                          <span className="animate-pulse">ENGAGING NEURAL AUDIT...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 text-[#00ff41] group-hover:scale-110 transition-transform" />
+                          <span>2. OPTIMIZE SOP CAMPAIGN</span>
+                          <ArrowRight className="w-4 h-4 text-[#00ff41]" />
+                        </>
+                      )
                     )}
                   </button>
                 </div>
@@ -927,6 +1037,254 @@ export default function App() {
 
           {/* RIGHT COLUMN: Results Dashboard */}
           <section className="lg:col-span-7">
+
+            {/* NEW TAB-0: Attention Discovery and Angle Broker */}
+            {currentTab === "attention" && (
+              <div className="flex flex-col gap-6">
+                
+                {/* Attention Loading screen */}
+                {attentionLoading && (
+                  <div className="border border-[#222] bg-[#080808] rounded p-12 text-center shadow-xs flex flex-col items-center justify-center gap-6 min-h-[500px]">
+                    <div className="relative w-20 h-20">
+                      <div className="absolute inset-0 border-4 border-[#00ff41]/10 rounded-full" />
+                      <div className="absolute inset-0 border-4 border-[#00ff41] border-t-transparent rounded-full animate-spin" />
+                      <div className="absolute inset-3 bg-[#050505] rounded-full flex items-center justify-center">
+                        <BrainCircuit className="w-8 h-8 text-[#00ff41] animate-pulse" />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <span className="text-[10px] text-[#00ff41] font-mono tracking-[0.25em] font-extrabold uppercase animate-pulse">
+                        SOP ATTENTION FUNNEL SYNTHESIS
+                      </span>
+                      <p className="text-xs text-white font-semibold font-mono tracking-wide">
+                        {attentionLoadingSteps[loadStepAttention]}
+                      </p>
+                      <p className="text-[9px] text-[#444] font-mono mt-1 uppercase">
+                        Scanning Platform: {platform}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Onboarding Empty state: Showcase Angle Library */}
+                {!attentionLoading && !discoveredAngles && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="border border-[#222] bg-[#080808] rounded p-6 flex flex-col gap-6 min-h-[500px]"
+                  >
+                    <div className="flex items-start gap-3">
+                      <Layers className="w-5 h-5 text-[#00ff41] shrink-0 mt-0.5" />
+                      <div>
+                        <h2 className="text-xs uppercase tracking-widest font-mono font-bold text-white mb-1">
+                          ATTENTION INTELLIGENCE ENGINE v3.0
+                        </h2>
+                        <p className="text-xs text-[#888]">
+                          "Attention first. Optimization second." The system begins with identifying the highest-leverage visual and psychological angles before drafting copy.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-[#0e0e0e] border border-dashed border-[#222] rounded text-center">
+                      <p className="text-xs text-[#00ff41] font-mono font-bold uppercase tracking-wider mb-1">
+                        👉 WORKSPACE PROTOCOL REQUIRED
+                      </p>
+                      <p className="text-xs text-[#666] max-w-md mx-auto">
+                        In the left parameter column, input your raw campaign concept, select your platform, then click <strong className="text-white">1. DISCOVER ATTENTION & ANGLES</strong> to broker high-converting angles.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-3 mt-2">
+                      <span className="text-[9px] font-mono text-[#444] uppercase tracking-widest block border-b border-[#1b1b1b] pb-2">
+                        THE VANGUARD ANGLE LIBRARY INDEX
+                      </span>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {[
+                          { title: "Who Benefits?", desc: "Identifies hidden corporations, licensing managers, or entities gathering wealth from common news trends." },
+                          { title: "The Wrong Question", desc: "Dismantles standard popular debate topics, introducing a deeper, more polarizing conflict zone." },
+                          { title: "Historical Parallel", desc: "Anchors current tech or lifestyle transitions under historical, high-consequence system shifts." },
+                          { title: "Contrarian Position", desc: "Defies consensus industry tips directly using friction-based, hard-earned empirical records." },
+                          { title: "Hidden Incentives", desc: "Exposes secondary psychological or economic forces driving standard consumer habituation." },
+                          { title: "Myth vs Reality", desc: "Violently debunks heavily-monetized comfort beliefs with stark, low-tox realities." }
+                        ].map((ang, idx) => (
+                          <div key={idx} className="p-3.5 bg-[#050505] border border-[#222] rounded flex flex-col gap-1.5 font-mono">
+                            <span className="text-[10px] text-[#00ff41] font-bold uppercase">
+                              INDEX_A7_N0{idx+1} // {ang.title}
+                            </span>
+                            <p className="text-[11px] text-[#777] font-sans leading-relaxed">
+                              {ang.desc}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Error state */}
+                {attentionError && (
+                  <div className="p-4 bg-[#ff3e3e15] border border-[#ff3e3e55] rounded text-[#ff3e3e] text-xs font-mono">
+                    [Broker System Exception] {attentionError}
+                  </div>
+                )}
+
+                {/* Main Attention Analysis View */}
+                {!attentionLoading && discoveredAngles && attentionTriggers && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex flex-col gap-6"
+                  >
+                    {/* Attention Trigger breakdown */}
+                    <div className="border border-[#222] bg-[#080808] rounded p-5 flex flex-col gap-4">
+                      <div>
+                        <span className="text-[9px] font-bold text-[#666] font-mono tracking-widest block uppercase">
+                          PHASE 01: COGNITIVE TRIGGER ANALYSIS
+                        </span>
+                        <h3 className="text-xs font-bold text-white uppercase font-mono mt-0.5">
+                          Detected Emotional & Social Gravitational Pulls
+                        </h3>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {attentionTriggers.map((trig: any, i: number) => (
+                          <div key={i} className="p-3 bg-[#050505] border border-[#1b1b1b] rounded flex flex-col gap-2 font-mono">
+                            <div className="flex justify-between items-center text-[10px] pb-1.5 border-b border-[#111]">
+                              <span className="text-white uppercase font-bold">{trig.trigger}</span>
+                              <span className="text-[#00ff41] font-bold">{Math.round(trig.score * 100)}% Match</span>
+                            </div>
+                            
+                            <div className="w-full bg-[#111] h-1.5 rounded-full overflow-hidden border border-[#222] shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)]">
+                              <div className="bg-[#00ff41] h-full rounded-full transition-all duration-500 shadow-[0_0_8px_#00ff41aa]" style={{ width: `${trig.score * 100}%` }} />
+                            </div>
+
+                            <p className="text-[11px] text-[#888] font-sans leading-relaxed">
+                              {trig.explanation}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Discovered Angles ranking list */}
+                    <div className="flex flex-col gap-4">
+                      <div>
+                        <span className="text-[9px] font-bold text-[#666] font-mono tracking-widest block uppercase">
+                          PHASE 02: HIGH-POTENTIAL STRATEGIC ANGLES
+                        </span>
+                        <h3 className="text-xs font-bold text-white uppercase font-mono mt-0.5">
+                          Ranked Opportunities for platform: "{platform}"
+                        </h3>
+                      </div>
+
+                      <div className="flex flex-col gap-5">
+                        {discoveredAngles.map((ang: any, i: number) => {
+                          const opps = Math.round(ang.opportunityScore * 100);
+                          const atts = Math.round(ang.attentionScore * 100);
+                          const opts = Math.round(ang.optimizationScore * 100);
+                          const rankColor = i === 0 ? "border-[#00ff41]" : "border-[#222]";
+                          const rankBg = i === 0 ? "bg-[#00ff4102]" : "bg-[#080808]";
+
+                          return (
+                            <motion.div
+                              key={i}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: i * 0.1 }}
+                              className={`border ${rankColor} ${rankBg} rounded p-5 flex flex-col gap-4 transition-all hover:bg-[#0c0c0c]`}
+                            >
+                              {/* Header metrics row */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1b1b1b] pb-3 font-mono">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${
+                                    i === 0 ? "bg-[#00ff411a] text-[#00ff41]" : "bg-[#222] text-[#888]"
+                                  }`}>
+                                    Opportunity Rank #0{i+1}
+                                  </span>
+                                  <span className="text-white text-xs font-bold uppercase tracking-wider">
+                                    {ang.title}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-4 text-[10px] text-[#888]">
+                                  <div>
+                                    <span>Attn: </span>
+                                    <span className="text-white font-bold">{atts}%</span>
+                                  </div>
+                                  <div>
+                                    <span>Opt: </span>
+                                    <span className="text-white font-bold">{opts}%</span>
+                                  </div>
+                                  <div className="border-l border-[#222] pl-3">
+                                    <span className="text-[#0ff] font-bold">OPPORTUNITY: </span>
+                                    <span className="text-[#0ff] font-extrabold text-xs">{opps}%</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Description body */}
+                              <div className="flex flex-col gap-1.5">
+                                <span className="text-[9px] font-bold text-[#666] font-mono uppercase tracking-wider block">
+                                  Strategic Thesis
+                                </span>
+                                <p className="text-xs text-[#aaa] font-sans leading-relaxed">
+                                  {ang.description}
+                                </p>
+                              </div>
+
+                              {/* Hook Preview slider box */}
+                              <div className="flex flex-col gap-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9px] font-bold text-[#666] font-mono uppercase tracking-wider block">
+                                    First Line Teaser Option
+                                  </span>
+                                  <span className="text-[8px] font-mono text-[#555] uppercase">
+                                    Trigger: {ang.primaryTrigger}
+                                  </span>
+                                </div>
+                                
+                                <div className="bg-[#030303] p-3.5 rounded border border-[#1b1b1b] border-dashed font-mono text-xs text-[#e0e0e0] italic leading-relaxed group transition-colors hover:text-white relative">
+                                  "{ang.hookPreview}"
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(ang.hookPreview);
+                                    }}
+                                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 bg-[#111] hover:bg-[#222] border border-[#333] rounded text-[#888] hover:text-white transition-all duration-150"
+                                    title="Copy Hook Teaser"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Selection/Action */}
+                              <div className="flex justify-end pt-1 border-t border-[#121212]">
+                                <button
+                                  onClick={() => {
+                                    setSelectedAngle(ang.title);
+                                    setCurrentTab("dashboard");
+                                    runAudit(undefined, ang.title);
+                                  }}
+                                  className="px-4 py-2 bg-[#00ff410e] hover:bg-[#00ff4122] text-[#00ff41] border border-[#00ff4144] hover:border-[#00ff41cc] rounded text-[10px] uppercase font-mono font-extrabold tracking-wider transition-all flex items-center gap-1.5 shadow-sm active:scale-95 select-none cursor-pointer hover:shadow-[0_0_8px_#00ff412a]"
+                                >
+                                  <Layers className="w-3.5 h-3.5" />
+                                  Select & Optimize Campaign Around This Angle
+                                  <ArrowRight className="w-3.5 h-3.5 animate-pulse" />
+                                </button>
+                              </div>
+
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                  </motion.div>
+                )}
+
+              </div>
+            )}
 
             {/* TAB-1: Core Dashboard Viewer */}
             {currentTab === "dashboard" && (
